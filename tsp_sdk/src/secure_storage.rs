@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::definitions::{VidEncryptionKeyType, VidSignatureKeyType};
+use crate::definitions::{
+    Digest, PendingNestedRelationship, VidEncryptionKeyType, VidSignatureKeyType,
+};
 use crate::{
     Error, ExportVid, PendingIncomingParallelRelationship, PendingParallelRelationship,
     RelationshipStatus,
@@ -57,6 +59,103 @@ pub(crate) struct Metadata {
     #[serde(default)]
     pending_incoming_parallel_requests: Vec<PendingIncomingParallelRelationship>,
     metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LegacyMetadata {
+    id: String,
+    enc_key_type: VidEncryptionKeyType,
+    sig_key_type: VidSignatureKeyType,
+    transport: String,
+    relation_status: LegacyRelationshipStatus,
+    relation_vid: Option<String>,
+    parent_vid: Option<String>,
+    tunnel: Option<Box<[String]>>,
+    #[serde(default)]
+    pending_parallel_requests: Vec<PendingParallelRelationship>,
+    #[serde(default)]
+    pending_incoming_parallel_requests: Vec<PendingIncomingParallelRelationship>,
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+enum LegacyRelationshipStatus {
+    _Controlled,
+    Bidirectional {
+        thread_id: Digest,
+        #[serde(default)]
+        remote_thread_id: Option<Digest>,
+        #[serde(default)]
+        outstanding_nested_requests: Vec<PendingNestedRelationship>,
+        #[serde(default)]
+        outstanding_nested_thread_ids: Vec<Digest>,
+    },
+    Unidirectional {
+        thread_id: Digest,
+    },
+    ReverseUnidirectional {
+        thread_id: Digest,
+    },
+    Unrelated,
+}
+
+impl From<LegacyMetadata> for Metadata {
+    fn from(value: LegacyMetadata) -> Self {
+        Self {
+            id: value.id,
+            enc_key_type: value.enc_key_type,
+            sig_key_type: value.sig_key_type,
+            transport: value.transport,
+            relation_status: value.relation_status.into(),
+            relation_vid: value.relation_vid,
+            parent_vid: value.parent_vid,
+            tunnel: value.tunnel,
+            pending_parallel_requests: value.pending_parallel_requests,
+            pending_incoming_parallel_requests: value.pending_incoming_parallel_requests,
+            metadata: value.metadata,
+        }
+    }
+}
+
+impl From<LegacyRelationshipStatus> for RelationshipStatus {
+    fn from(value: LegacyRelationshipStatus) -> Self {
+        match value {
+            LegacyRelationshipStatus::_Controlled => RelationshipStatus::_Controlled,
+            LegacyRelationshipStatus::Bidirectional {
+                thread_id,
+                remote_thread_id,
+                outstanding_nested_requests,
+                outstanding_nested_thread_ids,
+            } => RelationshipStatus::Bidirectional {
+                thread_id,
+                remote_thread_id: remote_thread_id.unwrap_or(thread_id),
+                outstanding_nested_requests: if outstanding_nested_requests.is_empty() {
+                    outstanding_nested_thread_ids
+                        .into_iter()
+                        .map(|thread_id| PendingNestedRelationship {
+                            thread_id,
+                            local_nested_vid: String::new(),
+                        })
+                        .collect()
+                } else {
+                    outstanding_nested_requests
+                },
+            },
+            LegacyRelationshipStatus::Unidirectional { thread_id } => {
+                RelationshipStatus::Unidirectional { thread_id }
+            }
+            LegacyRelationshipStatus::ReverseUnidirectional { thread_id } => {
+                RelationshipStatus::ReverseUnidirectional { thread_id }
+            }
+            LegacyRelationshipStatus::Unrelated => RelationshipStatus::Unrelated,
+        }
+    }
+}
+
+fn decode_metadata(bytes: &[u8]) -> Result<Metadata, Error> {
+    serde_json::from_slice(bytes)
+        .or_else(|_| serde_json::from_slice::<LegacyMetadata>(bytes).map(Into::into))
+        .map_err(|_| Error::DecodeState("could not decode vid metadata"))
 }
 
 #[async_trait]
@@ -279,8 +378,7 @@ impl SecureStorage for AskarSecureStorage {
             .await?;
 
         for item in results.iter() {
-            let data: Metadata = serde_json::from_slice(&item.value)
-                .map_err(|_| Error::DecodeState("could not decode vid metadata"))?;
+            let data: Metadata = decode_metadata(&item.value)?;
 
             let id = data.id.clone();
 
@@ -406,7 +504,7 @@ impl AskarSecureStorage {
 #[cfg(not(feature = "pq"))]
 #[cfg(test)]
 mod test {
-    use crate::{OwnedVid, SecureStore, VerifiedVid};
+    use crate::{OwnedVid, RelationshipStatus, SecureStore, VerifiedVid};
 
     use super::*;
 
@@ -448,5 +546,42 @@ mod test {
 
             vault.destroy().await.unwrap();
         }
+    }
+
+    #[test]
+    fn decode_legacy_bidirectional_metadata() {
+        let raw = serde_json::json!({
+            "id": "did:test:alice",
+            "enc_key_type": "X25519",
+            "sig_key_type": "Ed25519",
+            "transport": "tcp://127.0.0.1:13371",
+            "relation_status": {
+                "Bidirectional": {
+                    "thread_id": vec![1; 32],
+                    "outstanding_nested_thread_ids": [vec![2; 32]]
+                }
+            },
+            "relation_vid": "did:test:bob",
+            "parent_vid": null,
+            "tunnel": null,
+            "metadata": null
+        });
+
+        let decoded = decode_metadata(raw.to_string().as_bytes()).unwrap();
+
+        let RelationshipStatus::Bidirectional {
+            thread_id,
+            remote_thread_id,
+            outstanding_nested_requests,
+        } = decoded.relation_status
+        else {
+            panic!()
+        };
+
+        assert_eq!(thread_id, [1; 32]);
+        assert_eq!(remote_thread_id, [1; 32]);
+        assert_eq!(outstanding_nested_requests.len(), 1);
+        assert_eq!(outstanding_nested_requests[0].thread_id, [2; 32]);
+        assert!(outstanding_nested_requests[0].local_nested_vid.is_empty());
     }
 }

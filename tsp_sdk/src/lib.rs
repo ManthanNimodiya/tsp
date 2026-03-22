@@ -91,6 +91,8 @@ pub mod cesr;
 ///     (more precisely "strong receiver-unforgeability under chosen
 pub mod crypto;
 
+#[cfg(feature = "bench-network-timings")]
+mod bench;
 /// Defines several common data structures, traits and error types that are used throughout the project.
 pub mod definitions;
 mod error;
@@ -137,6 +139,36 @@ pub use async_store::AsyncSecureStore;
 pub use secure_storage::AskarSecureStorage;
 #[cfg(feature = "async")]
 pub use secure_storage::SecureStorage;
+
+#[cfg(feature = "bench-network-timings")]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BenchNetworkTimings {
+    pub signature_ns: u64,
+    pub seal_core_ns: u64,
+    pub verify_ns: u64,
+    pub open_core_ns: u64,
+}
+
+#[cfg(feature = "bench-network-timings")]
+impl BenchNetworkTimings {
+    pub(crate) fn record_seal_core(&mut self, started: std::time::Instant, signature_before: u64) {
+        let elapsed_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let signature_delta = self.signature_ns.saturating_sub(signature_before);
+        self.seal_core_ns = self
+            .seal_core_ns
+            .saturating_add(elapsed_ns.saturating_sub(signature_delta));
+    }
+}
+
+#[cfg(feature = "bench-network-timings")]
+pub fn reset_bench_network_timings() {
+    bench::reset();
+}
+
+#[cfg(feature = "bench-network-timings")]
+pub fn take_bench_network_timings() -> BenchNetworkTimings {
+    bench::take()
+}
 
 pub use definitions::{
     Payload, PendingIncomingParallelRelationship, PendingNestedRelationship,

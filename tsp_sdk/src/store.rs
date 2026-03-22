@@ -590,14 +590,25 @@ impl SecureStore {
         nonconfidential_data: Option<&[u8]>,
         message: &[u8],
     ) -> Result<(Url, Vec<u8>), Error> {
-        // ANCHOR_END: seal_message-mbBook
-        self.seal_message_payload(
+        #[cfg(feature = "bench-network-timings")]
+        let signature_before = crate::bench::signature_before();
+        #[cfg(feature = "bench-network-timings")]
+        let started = std::time::Instant::now();
+
+        let result = self.seal_message_payload(
             sender,
             receiver,
             nonconfidential_data,
             Payload::Content(message),
-        )
+        );
+
+        #[cfg(feature = "bench-network-timings")]
+        crate::bench::record_seal_core(started, signature_before);
+
+        result
     }
+
+    // ANCHOR_END: seal_message-mbBook
 
     /// Seal a TSP message.
     pub(crate) fn seal_message_payload(
@@ -1887,7 +1898,8 @@ impl SecureStore {
                 "cannot find thread_id for parent vid {parent_vid}"
             )));
         };
-        if outstanding_nested_requests[index].local_nested_vid != expected_local_nested_vid {
+        let local_nested_vid = &outstanding_nested_requests[index].local_nested_vid;
+        if !local_nested_vid.is_empty() && local_nested_vid != expected_local_nested_vid {
             return Err(Error::Relationship(format!(
                 "nested relationship accept receiver mismatch for parent vid {parent_vid}"
             )));
