@@ -426,7 +426,7 @@ async fn websocket_handler(
     ws.on_upgrade(async |socket| {
         let (mut ws_send, mut ws_receiver) = socket.split();
         let shutdown_notify = Arc::new(Notify::new());
-        let shutdown_notify_clone = Arc::new(Notify::new());
+        let shutdown_notify_clone = shutdown_notify.clone();
 
         // read from WebSocket (detect disconnection)
         let recv_task = tokio::spawn(async move {
