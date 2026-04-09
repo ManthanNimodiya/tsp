@@ -1100,12 +1100,25 @@ impl SecureStore {
                         })
                     }
                     Payload::RequestRelationship { thread_id, form } => {
-                        if let Some(parallel_sender_vid) = parallel_sender_vid {
-                            parallel_sender_vid.persist(self)?;
-                        }
                         let form = received_relationship_form(form)?;
 
                         if let ReceivedRelationshipForm::Parallel { new_vid, .. } = &form {
+                            match self.relation_status_for_vid_pair(&intended_receiver, &sender)? {
+                                RelationshipStatus::Bidirectional { .. } => {}
+                                RelationshipStatus::_Controlled
+                                | RelationshipStatus::Unidirectional { .. }
+                                | RelationshipStatus::ReverseUnidirectional { .. }
+                                | RelationshipStatus::Unrelated => {
+                                    return Err(requires_existing_parallel_relationship_error());
+                                }
+                            }
+
+                            let parallel_sender_vid = parallel_sender_vid.ok_or_else(|| {
+                                Error::Relationship(
+                                    "missing verified parallel VID for request message".into(),
+                                )
+                            })?;
+                            parallel_sender_vid.persist(self)?;
                             self.add_pending_incoming_parallel_request(
                                 new_vid,
                                 thread_id,
@@ -2679,6 +2692,68 @@ mod test {
         };
 
         assert_eq!(vid, alice_parallel.identifier());
+        assert!(matches!(
+            b_store.get_verified_vid(alice_parallel.identifier()),
+            Err(Error::UnverifiedVid(_))
+        ));
+    }
+
+    #[test]
+    #[wasm_bindgen_test]
+    fn test_parallel_relationship_request_requires_existing_outer_relationship() {
+        let a_store = create_test_store();
+        let b_store = create_test_store();
+        let (alice, bob) = create_test_vid_pair();
+        let alice_parallel = create_test_vid();
+
+        a_store.add_private_vid(alice.clone(), None).unwrap();
+        b_store.add_private_vid(bob.clone(), None).unwrap();
+        a_store
+            .add_private_vid(alice_parallel.clone(), None)
+            .unwrap();
+        a_store.add_verified_vid(bob.clone(), None).unwrap();
+        b_store.add_verified_vid(alice.clone(), None).unwrap();
+
+        let mut nonce_bytes = [0_u8; 32];
+        StdRng::from_entropy().fill_bytes(&mut nonce_bytes);
+        let mut thread_id = [0_u8; 32];
+        let signed_data = crate::crypto::build_parallel_request_signed_data(
+            Some(alice.identifier().as_bytes()),
+            relationship_digest_algorithm(),
+            nonce_bytes,
+            &mut thread_id,
+            alice_parallel.identifier().as_bytes(),
+        )
+        .unwrap();
+        let sig_new_vid = crate::crypto::sign_detached(&alice_parallel, &signed_data).unwrap();
+
+        let sender_vid = a_store.get_private_vid(alice.identifier()).unwrap();
+        let receiver_vid = a_store.get_verified_vid(bob.identifier()).unwrap();
+        let mut request_digest = Default::default();
+        let mut sealed = crate::crypto::seal_and_hash_with_relationship_nonce(
+            &*sender_vid,
+            &*receiver_vid,
+            None,
+            Payload::RequestRelationship {
+                thread_id: Default::default(),
+                form: RelationshipForm::Parallel {
+                    new_vid: alice_parallel.identifier().as_ref(),
+                    sig_new_vid: sig_new_vid.as_slice(),
+                },
+            },
+            Some(&mut request_digest),
+            Some(nonce_bytes),
+        )
+        .unwrap();
+
+        let Err(Error::Relationship(message)) = b_store.open_message(&mut sealed) else {
+            panic!("unexpected message result");
+        };
+
+        assert_eq!(
+            message,
+            "parallel relationship-forming requires an existing bidirectional relationship"
+        );
         assert!(matches!(
             b_store.get_verified_vid(alice_parallel.identifier()),
             Err(Error::UnverifiedVid(_))
