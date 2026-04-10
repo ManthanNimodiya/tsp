@@ -29,6 +29,7 @@ async = [
   "dep:async-stream",
   "dep:futures",
   "dep:tokio",
+  "dep:reqwest-eventsource",
   "dep:tokio-tungstenite",
   "dep:tokio-util",
   "dep:tracing",
@@ -68,6 +69,7 @@ async-stream = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 # transports
+reqwest-eventsource = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 bytes = { workspace = true }
