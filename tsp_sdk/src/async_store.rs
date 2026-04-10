@@ -583,7 +583,7 @@ impl AsyncSecureStore {
                     }
                     .map(|msg| msg.into_owned())
                     .map_err(|e| {
-                        tracing::error!("{}", e);
+                        tracing::debug!("Message processing error (non-fatal): {}", e);
                         e
                     })
                 }
