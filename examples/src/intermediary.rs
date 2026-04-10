@@ -323,7 +323,10 @@ async fn main() {
                     buf.expire(state.buffer_ttl);
                     expired_count += before - buf.messages.len();
                 }
-                buffers.retain(|_, buf| !buf.messages.is_empty());
+                // Note: do NOT remove empty buffers — the next_id counter
+                // must survive so new messages get monotonically increasing IDs.
+                // Otherwise, clients with Last-Event-ID will skip replayed messages
+                // that got lower IDs after the counter reset.
                 if expired_count > 0 {
                     tracing::debug!("Buffer cleanup: expired {expired_count} messages");
                 }
