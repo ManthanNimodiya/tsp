@@ -144,11 +144,11 @@ pub async fn receive_messages_tracked(
                 Some(Ok(reqwest_eventsource::Event::Message(msg))) => {
                     // Deduplication: skip events we've already processed
                     if let Ok(event_id) = msg.id.parse::<u64>() {
-                        if let Some(last_id) = last_processed_id {
-                            if event_id <= last_id {
-                                tracing::debug!("SSE dedup: skipping event id={} (last_processed={})", event_id, last_id);
-                                continue;
-                            }
+                        if let Some(last_id) = last_processed_id
+                            && event_id <= last_id
+                        {
+                            tracing::debug!("SSE dedup: skipping event id={} (last_processed={})", event_id, last_id);
+                            continue;
                         }
                         last_processed_id = Some(event_id);
                         cursor_for_stream.store(event_id, Ordering::Relaxed);

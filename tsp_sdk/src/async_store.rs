@@ -528,7 +528,17 @@ impl AsyncSecureStore {
     /// Receive messages with cursor tracking.
     /// Returns the stream AND a shared cursor that updates with each received event ID.
     /// The caller can read the cursor to persist it and send acks.
-    pub async fn receive_tracked(&self, vid: &str, last_event_id: Option<String>) -> Result<(TSPStream<ReceivedTspMessage, Error>, crate::transport::SseCursor), Error> {
+    pub async fn receive_tracked(
+        &self,
+        vid: &str,
+        last_event_id: Option<String>,
+    ) -> Result<
+        (
+            TSPStream<ReceivedTspMessage, Error>,
+            crate::transport::SseCursor,
+        ),
+        Error,
+    > {
         let receiver = self.inner.get_private_vid(vid)?;
         let mut transport = receiver.endpoint().clone();
         let path = transport
@@ -538,46 +548,46 @@ impl AsyncSecureStore {
 
         tracing::trace!("Listening (tracked) for {vid} on {transport}");
 
-        let (messages, cursor) = crate::transport::receive_messages_tracked(
-            &transport,
-            last_event_id.as_deref(),
-        ).await?;
+        let (messages, cursor) =
+            crate::transport::receive_messages_tracked(&transport, last_event_id.as_deref())
+                .await?;
 
         let db = self.inner.clone();
         let self_clone = self.clone();
-        let stream: TSPStream<ReceivedTspMessage, Error> = Box::pin(messages.then(move |message| {
-            let db_inner = db.clone();
-            let self_inner = self_clone.clone();
-            async move {
-                let mut message = message?;
+        let stream: TSPStream<ReceivedTspMessage, Error> =
+            Box::pin(messages.then(move |message| {
+                let db_inner = db.clone();
+                let self_inner = self_clone.clone();
+                async move {
+                    let mut message = message?;
 
-                if tracing::enabled!(tracing::Level::TRACE) {
-                    println!(
-                        "CESR-encoded message: {}",
-                        crate::cesr::color_format(&message)?
-                    );
-                }
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        println!(
+                            "CESR-encoded message: {}",
+                            crate::cesr::color_format(&message)?
+                        );
+                    }
 
-                match db_inner.open_message(&mut message) {
-                    Err(Error::UnverifiedSource(unknown_vid, _)) => {
-                        debug!("Verifying VID: {}", unknown_vid);
-                        self_inner.verify_vid(&unknown_vid, None).await?;
-                        db_inner.open_message(&mut message)
+                    match db_inner.open_message(&mut message) {
+                        Err(Error::UnverifiedSource(unknown_vid, _)) => {
+                            debug!("Verifying VID: {}", unknown_vid);
+                            self_inner.verify_vid(&unknown_vid, None).await?;
+                            db_inner.open_message(&mut message)
+                        }
+                        Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
+                            debug!("Re-verifying VID: {}", vid);
+                            self_inner.verify_vid(&vid, None).await?;
+                            db_inner.open_message(&mut message)
+                        }
+                        maybe_message => maybe_message,
                     }
-                    Err(Error::Crypto(CryptoError::Verify(vid, _))) => {
-                        debug!("Re-verifying VID: {}", vid);
-                        self_inner.verify_vid(&vid, None).await?;
-                        db_inner.open_message(&mut message)
-                    }
-                    maybe_message => maybe_message,
+                    .map(|msg| msg.into_owned())
+                    .map_err(|e| {
+                        tracing::error!("{}", e);
+                        e
+                    })
                 }
-                .map(|msg| msg.into_owned())
-                .map_err(|e| {
-                    tracing::error!("{}", e);
-                    e
-                })
-            }
-        }));
+            }));
 
         Ok((stream, cursor))
     }
@@ -596,7 +606,11 @@ impl AsyncSecureStore {
 
     /// Receive messages with an optional SSE cursor for resuming from a known position.
     /// The cursor is the last event ID received in a previous session.
-    pub async fn receive_with_cursor(&self, vid: &str, last_event_id: Option<String>) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
+    pub async fn receive_with_cursor(
+        &self,
+        vid: &str,
+        last_event_id: Option<String>,
+    ) -> Result<TSPStream<ReceivedTspMessage, Error>, Error> {
         let receiver = self.inner.get_private_vid(vid)?;
         let mut transport = receiver.endpoint().clone();
         let path = transport
@@ -606,7 +620,8 @@ impl AsyncSecureStore {
 
         tracing::trace!("Listening for {vid} on {transport}");
 
-        let messages = crate::transport::receive_messages_with_cursor(&transport, last_event_id).await?;
+        let messages =
+            crate::transport::receive_messages_with_cursor(&transport, last_event_id).await?;
 
         let db = self.inner.clone();
         let self_clone = self.clone();

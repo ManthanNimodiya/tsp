@@ -15,7 +15,12 @@ use clap::Parser;
 use futures::{sink::SinkExt, stream::Stream, stream::StreamExt};
 use reqwest::header;
 use serde::Serialize;
-use std::{collections::{HashMap, VecDeque}, convert::Infallible, sync::Arc, time::{Duration, Instant}};
+use std::{
+    collections::{HashMap, VecDeque},
+    convert::Infallible,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{Mutex, Notify, RwLock, RwLockWriteGuard, broadcast, mpsc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tsp_sdk::{
@@ -96,7 +101,9 @@ impl RecipientBuffer {
     /// Get all messages after a given ID (for Last-Event-ID replay).
     fn messages_after(&self, after_id: Option<u64>) -> Vec<BufferedMessage> {
         match after_id {
-            Some(id) => self.messages.iter()
+            Some(id) => self
+                .messages
+                .iter()
                 .filter(|m| m.id > id)
                 .cloned()
                 .collect(),
@@ -119,7 +126,9 @@ struct SseSubscribers {
 
 impl SseSubscribers {
     fn new() -> Self {
-        Self { senders: HashMap::new() }
+        Self {
+            senders: HashMap::new(),
+        }
     }
 
     /// Register a new SSE client for a DID. Returns a receiver for notifications.
@@ -408,7 +417,9 @@ async fn new_message(
         // Store in per-recipient buffer with monotonic ID
         let msg_id = {
             let mut buffers = state.buffers.write().await;
-            let buf = buffers.entry(receiver.clone()).or_insert_with(RecipientBuffer::new);
+            let buf = buffers
+                .entry(receiver.clone())
+                .or_insert_with(RecipientBuffer::new);
             buf.push(msg_bytes.clone(), state.buffer_max)
         };
 
@@ -657,14 +668,13 @@ async fn sse_handler(
             match notify_rx.recv().await {
                 Some(msg_id) => {
                     let buffers = state_clone.buffers.read().await;
-                    if let Some(buf) = buffers.get(&did_clone) {
-                        if let Some(msg) = buf.messages.iter().find(|m| m.id == msg_id) {
+                    if let Some(buf) = buffers.get(&did_clone)
+                        && let Some(msg) = buf.messages.iter().find(|m| m.id == msg_id) {
                             let encoded = Base64UrlUnpadded::encode_string(&msg.data);
                             yield Ok(Event::default()
                                 .id(msg.id.to_string())
                                 .data(encoded));
                         }
-                    }
                 }
                 None => {
                     // Channel closed — subscriber was cleaned up
@@ -678,7 +688,7 @@ async fn sse_handler(
     Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(SSE_KEEPALIVE_SECS))
-            .text("keepalive")
+            .text("keepalive"),
     )
 }
 
