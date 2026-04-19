@@ -13,6 +13,8 @@ use hpke_pq::kem;
 #[cfg(feature = "pq")]
 use ml_dsa::{EncodedVerifyingKey, KeyGen, MlDsa65, signature::Verifier};
 use rand_core::OsRng;
+#[cfg(feature = "bench-network-timings")]
+use std::time::Instant;
 
 pub use digest::{blake2b256, sha256};
 
@@ -343,7 +345,17 @@ pub fn seal(
     nonconfidential_data: Option<NonConfidentialData>,
     payload: Payload<&[u8]>,
 ) -> Result<TSPMessage, CryptoError> {
-    seal_and_hash(sender, receiver, nonconfidential_data, payload, None)
+    #[cfg(feature = "bench-network-timings")]
+    let signature_before = crate::bench::signature_before();
+    #[cfg(feature = "bench-network-timings")]
+    let started = Instant::now();
+
+    let result = seal_and_hash(sender, receiver, nonconfidential_data, payload, None);
+
+    #[cfg(feature = "bench-network-timings")]
+    crate::bench::record_seal_core(started, signature_before);
+
+    result
 }
 
 /// Encrypt, authenticate and sign and CESR encode a TSP message; also returns the hash value of the plaintext parts before encryption
@@ -430,10 +442,16 @@ pub(crate) fn open_with_signature_info<'a>(
     sender: &dyn VerifiedVid,
     tsp_message: &'a mut [u8],
 ) -> Result<(MessageContents<'a>, Option<ParallelSignatureInfo<'a>>), CryptoError> {
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let view = crate::cesr::decode_envelope(tsp_message)?;
+    #[cfg(feature = "bench-network-timings")]
+    crate::bench::record_open_core(open_core_started);
 
     // verify outer signature
     let verification_challenge = view.as_challenge();
+    #[cfg(feature = "bench-network-timings")]
+    let verify_started = std::time::Instant::now();
     if !matches!(view.signature_type(), SignatureType::NoSignature) {
         verify_detached(
             sender,
@@ -441,8 +459,12 @@ pub(crate) fn open_with_signature_info<'a>(
             verification_challenge.signature,
         )?;
     }
+    #[cfg(feature = "bench-network-timings")]
+    crate::bench::record_verify(verify_started);
 
     // decode envelope
+    #[cfg(feature = "bench-network-timings")]
+    let open_core_started = std::time::Instant::now();
     let crate::cesr::DecodedEnvelope {
         raw_header,
         envelope,
@@ -459,7 +481,7 @@ pub(crate) fn open_with_signature_info<'a>(
         return Err(CryptoError::UnexpectedRecipient);
     }
 
-    match envelope.crypto_type {
+    let result = match envelope.crypto_type {
         #[cfg(feature = "pq")]
         CryptoType::X25519Kyber768Draft00 => {
             tsp_hpke::open::<Aead, Kdf, kem::X25519Kyber768Draft00>(
@@ -475,7 +497,11 @@ pub(crate) fn open_with_signature_info<'a>(
             tsp_nacl::open(receiver, sender, raw_header, envelope, ciphertext)
         }
         CryptoType::Plaintext => Err(CryptoError::MissingCiphertext),
-    }
+    };
+    #[cfg(feature = "bench-network-timings")]
+    crate::bench::record_open_core(open_core_started);
+
+    result
 }
 
 /// Construct and sign a non-confidential TSP message
