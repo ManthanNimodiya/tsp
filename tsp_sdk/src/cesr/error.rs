@@ -9,6 +9,7 @@ pub enum EncodeError {
     MissingReceiver,
     #[error("VID is not valid for CESR encoding")]
     InvalidVid,
+    #[error("invalid signature type")]
     InvalidSignatureType,
 }
 
