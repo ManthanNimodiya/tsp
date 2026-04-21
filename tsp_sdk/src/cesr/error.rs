@@ -11,6 +11,8 @@ pub enum EncodeError {
     InvalidVid,
     #[error("invalid signature type")]
     InvalidSignatureType,
+    #[error("count value exceeds maximum CESR encoding limit")]
+    CountOverflow,
 }
 
 /// An error type to indicate something went wrong with decoding

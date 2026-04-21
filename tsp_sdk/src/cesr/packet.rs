@@ -420,7 +420,7 @@ pub fn encode_payload(
         }
     }
 
-    encode_count(TSP_PAYLOAD, temp.len() / 3, output);
+    encode_count(TSP_PAYLOAD, temp.len() / 3, output)?;
     output.extend(temp.iter());
 
     Ok(())
@@ -431,7 +431,7 @@ pub fn encode_hops(
     hops: &[impl AsRef<[u8]>],
     output: &mut impl for<'a> Extend<&'a u8>,
 ) -> Result<(), EncodeError> {
-    encode_count(TSP_HOP_LIST, hops.len() as u16, output);
+    encode_count(TSP_HOP_LIST, hops.len() as u16, output)?;
     for hop in hops {
         checked_encode_variable_data(TSP_VID, hop.as_ref(), output)?;
     }
@@ -606,7 +606,7 @@ const fn encoded_version() -> u16 {
 /// Encode a TSP version marker
 pub fn encode_version(output: &mut impl for<'b> Extend<&'b u8>) {
     output.extend(&YTSP);
-    encode_count(TSP_VERSION.0, encoded_version(), output);
+    let _ = encode_count(TSP_VERSION.0, encoded_version(), output);
 }
 
 fn decode_version(stream: &mut &[u8]) -> Result<(), DecodeError> {
@@ -636,7 +636,7 @@ pub fn encode_ets_envelope<'a, Vid: AsRef<[u8]>>(
     let mut temp = Vec::new(); // temporary buffer to count the size
     encode_envelope_fields(envelope, &mut temp)?;
 
-    encode_count(TSP_ETS_WRAPPER, temp.len() / 3, output);
+    encode_count(TSP_ETS_WRAPPER, temp.len() / 3, output)?;
     output.extend(temp.iter());
     Ok(())
 }
@@ -649,7 +649,7 @@ pub fn encode_s_envelope<'a, Vid: AsRef<[u8]>>(
     let mut temp = Vec::new(); // temporary buffer to count the size
     encode_envelope_fields(envelope, &mut temp)?;
 
-    encode_count(TSP_S_WRAPPER, temp.len() / 3, output);
+    encode_count(TSP_S_WRAPPER, temp.len() / 3, output)?;
     output.extend(temp.iter());
     Ok(())
 }
@@ -690,18 +690,18 @@ impl<'a> EncodedSignature<'a> {
         match self {
             EncodedSignature::NoSignature => {}
             EncodedSignature::Ed25519(signature) => {
-                encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
-                encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
+                let _ = encode_count(TSP_ATTACH_GRP, signature.len().div_ceil(3), output);
+                let _ = encode_count(TSP_INDEX_SIG_GRP, signature.len().div_ceil(3), output);
                 encode_fixed_data(ED25519_SIGNATURE, signature.as_slice(), output);
             }
             #[cfg(feature = "pq")]
             EncodedSignature::MlDsa65(signature) => {
-                encode_count(
+                let _ = encode_count(
                     TSP_ATTACH_GRP,
                     signature.len().next_multiple_of(3) / 3,
                     output,
                 );
-                encode_count(
+                let _ = encode_count(
                     TSP_INDEX_SIG_GRP,
                     signature.len().next_multiple_of(3) / 3,
                     output,

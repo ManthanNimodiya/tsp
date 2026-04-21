@@ -1,4 +1,4 @@
-use super::{bits, selector::*};
+use super::{bits, error::EncodeError, selector::*};
 
 /// Encode fixed size data with a known identifier
 pub fn encode_fixed_data(
@@ -72,9 +72,9 @@ pub fn encode_count(
     identifier: u16,
     count: impl Into<usize>,
     stream: &mut impl for<'a> Extend<&'a u8>,
-) {
+) -> Result<(), EncodeError> {
     let count: usize = count.into();
-    let count: u32 = count.try_into().unwrap();
+    let count: u32 = count.try_into().map_err(|_| EncodeError::CountOverflow)?;
     if count < 4096 {
         let word = (DASH << 18) | (bits(identifier, 6) << 12) | bits(count, 12);
 
@@ -85,6 +85,27 @@ pub fn encode_count(
 
         stream.extend(&u32::to_be_bytes(word1)[1..]);
         stream.extend(&u32::to_be_bytes(word2)[1..]);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_count_overflow_returns_error() {
+        let mut stream = Vec::new();
+        let result = encode_count(0, usize::MAX, &mut stream);
+        assert!(matches!(result, Err(EncodeError::CountOverflow)));
+        assert!(stream.is_empty());
+    }
+
+    #[test]
+    fn encode_count_small_succeeds() {
+        let mut stream = Vec::new();
+        encode_count(0, 42usize, &mut stream).expect("small count should succeed");
+        assert!(!stream.is_empty());
     }
 }
 
