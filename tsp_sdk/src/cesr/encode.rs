@@ -89,6 +89,21 @@ pub fn encode_count(
     Ok(())
 }
 
+/// Encode a genus with known identifier and version
+#[allow(dead_code)]
+pub fn encode_genus(
+    genus: [u8; 3],
+    (major, minor, patch): (u8, u8, u8),
+    stream: &mut impl for<'a> Extend<&'a u8>,
+) {
+    let version = (bits(major, 6) << 12) | (bits(minor, 6) << 6) | bits(patch, 6);
+    let word1 = (DASH << 18) | (DASH << 12) | (bits(genus[0], 6) << 6) | bits(genus[1], 6);
+    let word2 = (bits(genus[2], 6) << 18) | version;
+
+    stream.extend(&u32::to_be_bytes(word1)[1..]);
+    stream.extend(&u32::to_be_bytes(word2)[1..]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,19 +122,4 @@ mod tests {
         encode_count(0, 42usize, &mut stream).expect("small count should succeed");
         assert!(!stream.is_empty());
     }
-}
-
-/// Encode a genus with known identifier and version
-#[allow(dead_code)]
-pub fn encode_genus(
-    genus: [u8; 3],
-    (major, minor, patch): (u8, u8, u8),
-    stream: &mut impl for<'a> Extend<&'a u8>,
-) {
-    let version = (bits(major, 6) << 12) | (bits(minor, 6) << 6) | bits(patch, 6);
-    let word1 = (DASH << 18) | (DASH << 12) | (bits(genus[0], 6) << 6) | bits(genus[1], 6);
-    let word2 = (bits(genus[2], 6) << 18) | version;
-
-    stream.extend(&u32::to_be_bytes(word1)[1..]);
-    stream.extend(&u32::to_be_bytes(word2)[1..]);
 }
