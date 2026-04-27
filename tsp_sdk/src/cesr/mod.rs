@@ -458,7 +458,11 @@ ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
         for &(identifier, count) in cases {
             let mut stream = Vec::new();
             encode_count(identifier, count as usize, &mut stream);
-            assert_eq!(stream.len(), 6, "identifier={identifier} count={count}: expected 6-byte long form");
+            assert_eq!(
+                stream.len(),
+                6,
+                "identifier={identifier} count={count}: expected 6-byte long form"
+            );
             let mut slice = stream.as_slice();
             let decoded = decode_count(identifier, &mut slice);
             assert_eq!(
@@ -466,7 +470,10 @@ ACTD7NDX93ZGTkZBBuSeSGsAQ7u0hngpNTZTK_Um7rUZGnLRNJvo5oOnnC1J2iBQHuxoq8PyjdT3BHS2
                 Some(count),
                 "identifier={identifier} count={count}: decoded {decoded:?}"
             );
-            assert!(slice.is_empty(), "stream should be fully consumed after decode");
+            assert!(
+                slice.is_empty(),
+                "stream should be fully consumed after decode"
+            );
         }
     }
 }
