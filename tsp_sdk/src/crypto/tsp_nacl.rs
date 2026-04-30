@@ -142,19 +142,27 @@ pub(crate) fn seal(
     // create and append signature
     match sender.signature_key_type() {
         VidSignatureKeyType::Ed25519 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ed25519_dalek::SigningKey::from_bytes(&TryInto::<[u8; 32]>::try_into(
                 sender.signing_key().as_slice(),
             )?);
             let signature = sign_key.sign(&data).to_bytes();
             crate::cesr::encode_signature(&signature, &mut data, SignatureType::Ed25519);
+            #[cfg(feature = "bench-network-timings")]
+            crate::bench::record_signature(signature_started);
         }
         #[cfg(feature = "pq")]
         VidSignatureKeyType::MlDsa65 => {
+            #[cfg(feature = "bench-network-timings")]
+            let signature_started = std::time::Instant::now();
             let sign_key = ml_dsa::SigningKey::<MlDsa65>::decode(
                 &EncodedSigningKey::<MlDsa65>::try_from(sender.signing_key().as_slice())?,
             );
             let signature = sign_key.sign(&data).encode();
             crate::cesr::encode_signature(signature.as_slice(), &mut data, SignatureType::MlDsa65);
+            #[cfg(feature = "bench-network-timings")]
+            crate::bench::record_signature(signature_started);
         }
     }
 
