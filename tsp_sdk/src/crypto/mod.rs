@@ -591,7 +591,7 @@ mod tests {
     use crate::{definitions::Payload, vid::OwnedVid};
     use url::Url;
 
-    use super::{open, seal};
+    use super::{CryptoError, open, seal};
 
     #[test]
     fn seal_open_message() {
@@ -617,5 +617,45 @@ mod tests {
 
         assert_eq!(received_nonconfidential_data.unwrap(), nonconfidential_data);
         assert_eq!(received_secret_message, Payload::Content(secret_message));
+    }
+    #[test]
+    fn open_wrong_recipient() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+        let carol = OwnedVid::bind(
+            "did:test:carol",
+            Url::parse("tcp://127.0.0.1:13373").unwrap(),
+        );
+
+        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+
+        let result = open(&carol, &bob, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::UnexpectedRecipient)))
+    }
+    #[cfg(feature = "fuzzing")]
+    #[test]
+    fn open_wrong_key() {
+        let alice = OwnedVid::bind(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+        );
+        let bob = OwnedVid::bind("did:test:bob", Url::parse("tcp://127.0.0.1:13372").unwrap());
+
+        let mut message = seal(&bob, &alice, None, Payload::Content(b"secret")).unwrap();
+
+        let wrong_alice = OwnedVid::from_bytes(
+            "did:test:alice",
+            Url::parse("tcp://127.0.0.1:13371").unwrap(),
+            [1u8; 32],
+            [2u8; 32],
+        );
+
+        let result = open(&wrong_alice, &bob, &mut message);
+
+        assert!(matches!(result, Err(CryptoError::CryptographicNacl(_))))
     }
 }
